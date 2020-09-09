@@ -8,12 +8,13 @@
 
 module audio_sigmadelta
 (
-  input   clk,        //bus clock
+  input   clk,                //bus clock
   input   clk7_en,
+  input   cck,
   input  [8:0] ldatasum,      // left channel data
   input  [8:0] rdatasum,      // right channel data
-  output  reg left=0,        //left bitstream output
-  output  reg right=0        //right bitsteam output
+  output  reg left = 0,       //left bitstream output
+  output  reg right = 0       //right bitsteam output
 );
 
 
@@ -32,83 +33,21 @@ reg  [DW+A1W+2-1:0] sd_l_ac1=0, sd_r_ac1=0;
 reg  [DW+A2W+2-1:0] sd_l_ac2=0, sd_r_ac2=0;
 wire [DW+A2W+3-1:0] sd_l_quant, sd_r_quant;
 
-// LPF noise LFSR
-reg [24-1:0] seed1 = 24'h654321;
-reg [19-1:0] seed2 = 19'h12345;
-reg [24-1:0] seed_sum=0, seed_prev=0, seed_out=0;
-always @ (posedge clk) begin
-  //if (clk7_en) begin
-    if (&seed1)
-      seed1 <= #1 24'h654321;
-    else
-      seed1 <= #1 {seed1[22:0], ~(seed1[23] ^ seed1[22] ^ seed1[21] ^ seed1[16])};
-  //end
-end
-always @ (posedge clk) begin
-  //if (clk7_en) begin
-    if (&seed2)
-      seed2 <= #1 19'h12345;
-    else
-      seed2 <= #1 {seed2[17:0], ~(seed2[18] ^ seed2[17] ^ seed2[16] ^ seed2[13] ^ seed2[0])};
-  //end
-end
-always @ (posedge clk) begin
-  //if (clk7_en) begin
-    seed_sum  <= #1 seed1 + {5'b0, seed2};
-    seed_prev <= #1 seed_sum;
-    seed_out  <= #1 seed_sum - seed_prev;
-  //end
-end
+// LPF noise LFSR (DISABLED!)
+reg [24-1:0] seed_out = 0;
 
-// linear interpolate
-localparam ID=4; // counter size, also 2^ID = interpolation rate
-reg  [ID+0-1:0] int_cnt = 0;
-always @ (posedge clk) begin
-  //if (clk7_en) begin
-    int_cnt <= #1 int_cnt + 'd1;
-  //end
-end
-
-reg  [DW+0-1:0] ldata_cur=0, ldata_prev=0;
-reg  [DW+0-1:0] rdata_cur=0, rdata_prev=0;
-wire [DW+1-1:0] ldata_step, rdata_step;
-reg  [DW+ID-1:0] ldata_int=0, rdata_int=0;
+// DISABLED Interpolator!
 wire [DW+0-1:0] ldata_int_out, rdata_int_out;
-assign ldata_step = {ldata_cur[DW-1], ldata_cur} - {ldata_prev[DW-1], ldata_prev}; // signed subtract
-assign rdata_step = {rdata_cur[DW-1], rdata_cur} - {rdata_prev[DW-1], rdata_prev}; // signed subtract
-always @ (posedge clk) begin
-  //if (clk7_en) begin
-    if (~|int_cnt) begin
-      ldata_prev <= #1 ldata_cur;
-      ldata_cur  <= #1 ldatasum; //{~ldatasum[DW-1], ldatasum[DW-2:0]}; // convert to offset binary, samples no longer signed!
-      rdata_prev <= #1 rdata_cur;
-      rdata_cur  <= #1 rdatasum; //{~rdatasum[DW-1], rdatasum[DW-2:0]}; // convert to offset binary, samples no longer signed!
-      ldata_int  <= #1 {ldata_cur[DW-1], ldata_cur, {ID{1'b0}}};
-      rdata_int  <= #1 {rdata_cur[DW-1], rdata_cur, {ID{1'b0}}};
-    end else begin
-      ldata_int  <= #1 ldata_int + {{ID{ldata_step[DW+1-1]}}, ldata_step};
-      rdata_int  <= #1 rdata_int + {{ID{rdata_step[DW+1-1]}}, rdata_step};
-    end
-  //end
-end
-assign ldata_int_out = ldata_int[DW+ID-1:ID];
-assign rdata_int_out = rdata_int[DW+ID-1:ID];
+
+assign ldata_int_out = ldatasum;
+assign rdata_int_out = rdatasum;
+
+
 
 // input gain x3
 wire [DW+2-1:0] ldata_gain, rdata_gain;
 assign ldata_gain = {ldata_int_out[DW-1], ldata_int_out, 1'b0} + {{(2){ldata_int_out[DW-1]}}, ldata_int_out};
 assign rdata_gain = {rdata_int_out[DW-1], rdata_int_out, 1'b0} + {{(2){rdata_int_out[DW-1]}}, rdata_int_out};
-
-/*
-// random dither to 15 bits
-reg [DW-1:0] ldata=0, rdata=0;
-always @ (posedge clk) begin
-  if (clk7_en) begin
-    ldata <= #1 ldata_gain[DW+2-1:2] + ( (~(&ldata_gain[DW+2-1-1:2]) && (ldata_gain[1:0] > seed_out[1:0])) ? 15'd1 : 15'd0 );
-    rdata <= #1 rdata_gain[DW+2-1:2] + ( (~(&ldata_gain[DW+2-1-1:2]) && (ldata_gain[1:0] > seed_out[1:0])) ? 15'd1 : 15'd0 );
-  end
-end
-*/
 
 // accumulator adders
 assign sd_l_aca1 = {{(A1W){ldata_gain[DW+2-1]}}, ldata_gain} - {{(A1W){sd_l_er0[DW+2-1]}}, sd_l_er0} + sd_l_ac1;
@@ -119,7 +58,7 @@ assign sd_r_aca2 = {{(A2W-A1W){sd_r_aca1[DW+A1W+2-1]}}, sd_r_aca1} - {{(A2W){sd_
 
 // accumulators
 always @ (posedge clk) begin
-  //if (clk7_en) begin
+  //if (clk7_en && cck) begin
     sd_l_ac1 <= #1 sd_l_aca1;
     sd_r_ac1 <= #1 sd_r_aca1;
     sd_l_ac2 <= #1 sd_l_aca2;
@@ -134,8 +73,9 @@ assign sd_r_quant = {sd_r_ac2[DW+A2W+2-1], sd_r_ac2} + {{(DW+A2W+3-RW){seed_out[
 // error feedback
 assign sd_l_er0 = sd_l_quant[DW+A2W+3-1] ? {1'b1, {(DW+2-1){1'b0}}} : {1'b0, {(DW+2-1){1'b1}}};
 assign sd_r_er0 = sd_r_quant[DW+A2W+3-1] ? {1'b1, {(DW+2-1){1'b0}}} : {1'b0, {(DW+2-1){1'b1}}};
+
 always @ (posedge clk) begin
-  //if (clk7_en) begin
+  //if (clk7_en && cck) begin
     sd_l_er0_prev <= #1 (&sd_l_er0) ? sd_l_er0 : sd_l_er0+1;
     sd_r_er0_prev <= #1 (&sd_r_er0) ? sd_r_er0 : sd_r_er0+1;
   //end
@@ -143,12 +83,40 @@ end
 
 // output
 always @ (posedge clk) begin
-  //if (clk7_en) begin
+  //if (clk7_en && cck) begin
     left  <= #1 (~|ldata_gain) ? ~left  : ~sd_l_er0[DW+2-1];
     right <= #1 (~|rdata_gain) ? ~right : ~sd_r_er0[DW+2-1];
   //end
 end
 
-
 endmodule
+
+
+/*module audio_sigmadelta
+(
+  // This module crashes!
+
+  input   clk,        	     //bus clock
+  input   clk7_en,
+  input	  cck,
+  input  [8:0] ldatasum,     // left channel data
+  input  [8:0] rdatasum,     // right channel data
+  output  left,        	     //left bitstream output
+  output  right              //right bitsteam output
+);
+
+reg [9:0] PWM_accumulatorL;
+reg [9:0] PWM_accumulatorR;
+
+assign left = PWM_accumulatorL[9];
+assign right = PWM_accumulatorR[9];
+
+always @(posedge clk) begin
+	if (clk7_en && cck) begin
+		PWM_accumulatorL <= PWM_accumulatorL[8:0] + ldatasum;
+		PWM_accumulatorR <= PWM_accumulatorR[8:0] + rdatasum;
+	end
+end
+
+endmodule*/
 

@@ -137,14 +137,14 @@ always @(posedge clk) begin
     if (reset && cck) volcnt <= 6'h00;
 
     else if (volcntrld && cck)//load volume counter from audio volume register
-      volcnt[5:0] <= 6'h00; //audvol[6:0];
-    else if (volcount && cck)//volume counter count up
-      volcnt[5:0] <= volcnt[5:0] + 6'd1;
+      volcnt[5:0] <= audvol[5:0];
+    else if (volcount && cck)//volume counter count down
+      volcnt[5:0] <= volcnt[5:0] - 6'd1;
   end
 end
 
 assign volcount = 1'd1;
-assign volgate = (volcnt < audvol);
+assign volgate = (volcnt < audvol[6:0]);
 
 
 //period counter
@@ -197,7 +197,8 @@ always @(posedge clk) begin
 end
 
 //assign sample[7:0] = penhi ? datbuf[15:8] : datbuf[7:0];
-assign sample[7:0] = (silence | !volgate ? 8'b0 : (penhi ? datbuf[15:8] : datbuf[7:0])); // pwm volume gated sample output
+//assign sample[7:0] = (silence | !volgate ? 8'b0 : (penhi ? datbuf[15:8] : datbuf[7:0])); // pwm volume gated sample output
+assign sample[7:0] = (~volgate ? 8'b0 : (penhi ? datbuf[15:8] : datbuf[7:0])); // pwm volume gated sample output
 
 
 //dma request logic

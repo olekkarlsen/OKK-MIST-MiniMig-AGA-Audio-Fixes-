@@ -325,6 +325,7 @@ audio_sigmadelta dac
 (
   .clk(clk),
   .clk7_en (clk7_en),
+  .cck(cck),
   .ldatasum(ldata),
   .rdatasum(rdata),
   .left(left),
